@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 
-interface TokenPayload {
+export interface TokenPayload {
   userId: string;
   role: "admin" | "editor";
 }
@@ -34,4 +34,8 @@ export function generateRefreshToken(payload: TokenPayload): string {
   return jwt.sign(payload, REFRESH_TOKEN_SECRET, {
     expiresIn: REFRESH_TOKEN_EXPIRES_IN as `${number}${"s" | "m" | "h" | "d"}`,
   });
+}
+
+export function verifyRefreshToken(token: string): TokenPayload {
+  return jwt.verify(token, REFRESH_TOKEN_SECRET) as TokenPayload;
 }

@@ -2,7 +2,7 @@
 import type { Request, Response } from "express";
 
 import { loginSchema } from "../validators/auth.validator.js";
-import { loginAdmin } from "../services/auth.service.js";
+import { loginAdmin, refreshAdmin } from "../services/auth.service.js";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -58,6 +58,64 @@ export async function login(
     }
 
     console.error("Login error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+}
+
+export async function refresh(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+
+    if (!refreshToken) {
+      res.status(401).json({
+        success: false,
+        message: "Refresh token is required",
+      });
+
+      return;
+    }
+
+    const result = await refreshAdmin(refreshToken);
+
+    res
+      .cookie("accessToken", result.accessToken, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "none" : "lax",
+        maxAge: 15 * 60 * 1000,
+      })
+      .cookie("refreshToken", result.refreshToken, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "none" : "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      })
+      .status(200)
+      .json({
+        success: true,
+        message: "Token refreshed successfully",
+      });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "Invalid or expired refresh token"
+    ) {
+      res.status(401).json({
+        success: false,
+        message: "Invalid or expired refresh token",
+      });
+
+      return;
+    }
+
+    console.error("Refresh token error:", error);
 
     res.status(500).json({
       success: false,

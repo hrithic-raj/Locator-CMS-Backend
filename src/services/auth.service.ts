@@ -3,6 +3,7 @@ import { comparePassword } from "../utils/password.js";
 import {
   generateAccessToken,
   generateRefreshToken,
+  verifyRefreshToken,
 } from "../utils/jwt.js";
 
 interface LoginInput {
@@ -19,6 +20,11 @@ interface LoginResult {
     email: string;
     role: "admin" | "editor";
   };
+}
+
+interface RefreshResult {
+  accessToken: string;
+  refreshToken: string;
 }
 
 export async function loginAdmin(
@@ -63,5 +69,48 @@ export async function loginAdmin(
       email: user.email,
       role: user.role,
     },
+  };
+}
+
+export async function refreshAdmin(
+  refreshToken: string
+): Promise<RefreshResult> {
+  let payload;
+
+  try {
+    payload = verifyRefreshToken(refreshToken);
+  } catch {
+    throw new Error("Invalid or expired refresh token");
+  }
+
+  const user = await AdminUser.findById(payload.userId);
+
+  if (!user) {
+    throw new Error("Invalid or expired refresh token");
+  }
+
+  if (!user.refreshToken) {
+    throw new Error("Invalid or expired refresh token");
+  }
+
+  if (user.refreshToken !== refreshToken) {
+    throw new Error("Invalid or expired refresh token");
+  }
+
+  const tokenPayload = {
+    userId: user._id.toString(),
+    role: user.role,
+  };
+
+  const newAccessToken = generateAccessToken(tokenPayload);
+  const newRefreshToken = generateRefreshToken(tokenPayload);
+
+  user.refreshToken = newRefreshToken;
+
+  await user.save();
+
+  return {
+    accessToken: newAccessToken,
+    refreshToken: newRefreshToken,
   };
 }
