@@ -2,7 +2,7 @@
 import type { Request, Response } from "express";
 
 import { loginSchema } from "../validators/auth.validator.js";
-import { loginAdmin, refreshAdmin } from "../services/auth.service.js";
+import { loginAdmin, logoutAdmin, refreshAdmin } from "../services/auth.service.js";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -116,6 +116,43 @@ export async function refresh(
     }
 
     console.error("Refresh token error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+}
+
+export async function logout(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+
+    if (refreshToken) {
+      await logoutAdmin(refreshToken);
+    }
+
+    res
+      .clearCookie("accessToken", {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "none" : "lax",
+      })
+      .clearCookie("refreshToken", {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "none" : "lax",
+      })
+      .status(200)
+      .json({
+        success: true,
+        message: "Logout successful",
+      });
+  } catch (error) {
+    console.error("Logout error:", error);
 
     res.status(500).json({
       success: false,

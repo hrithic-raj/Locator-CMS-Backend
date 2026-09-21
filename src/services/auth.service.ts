@@ -114,3 +114,19 @@ export async function refreshAdmin(
     refreshToken: newRefreshToken,
   };
 }
+
+export async function logoutAdmin(
+  refreshToken: string
+): Promise<void> {
+  const user = await AdminUser.findOne({
+    refreshToken,
+  });
+
+  if (!user) {
+    return;
+  }
+
+  user.refreshToken = null;
+
+  await user.save();
+}
