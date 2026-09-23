@@ -1,8 +1,10 @@
 import jwt from "jsonwebtoken";
 
+import type { AdminRole } from "../models/AdminUser.js";
+
 export interface TokenPayload {
   userId: string;
-  role: "admin" | "editor";
+  role: AdminRole;
 }
 
 function getRequiredEnv(name: string): string {
@@ -38,4 +40,8 @@ export function generateRefreshToken(payload: TokenPayload): string {
 
 export function verifyRefreshToken(token: string): TokenPayload {
   return jwt.verify(token, REFRESH_TOKEN_SECRET) as TokenPayload;
+}
+
+export function verifyAccessToken(token: string): TokenPayload {
+  return jwt.verify(token, ACCESS_TOKEN_SECRET) as TokenPayload;
 }

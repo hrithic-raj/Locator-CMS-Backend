@@ -1,12 +1,13 @@
 import mongoose, { Document, Schema } from "mongoose";
 
-export type AdminRole = "admin" | "editor";
+export type AdminRole = "admin" | "editor" | "contributor";
 
 export interface IAdminUser extends Document {
   name: string;
   email: string;
   passwordHash: string;
   role: AdminRole;
+  isActive: boolean;
   refreshToken?: string | null;
   lastLoginAt?: Date | null;
   createdAt: Date;
@@ -36,9 +37,14 @@ const adminUserSchema = new Schema<IAdminUser>(
 
     role: {
       type: String,
-      enum: ["admin", "editor"],
-      default: "editor",
+      enum: ["admin", "editor", "contributor"],
+      default: "contributor",
       required: true,
+    },
+
+    isActive: {
+      type: Boolean,
+      default: true,
     },
 
     refreshToken: {

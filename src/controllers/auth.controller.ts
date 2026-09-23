@@ -2,7 +2,12 @@
 import type { Request, Response } from "express";
 
 import { loginSchema } from "../validators/auth.validator.js";
-import { loginAdmin, logoutAdmin, refreshAdmin } from "../services/auth.service.js";
+import {
+  loginAdmin,
+  logoutAdmin,
+  refreshAdmin,
+  getCurrentUser,
+} from "../services/auth.service.js";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -52,6 +57,18 @@ export async function login(
       res.status(401).json({
         success: false,
         message: "Invalid email or password",
+      });
+
+      return;
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === "This account has been deactivated"
+    ) {
+      res.status(403).json({
+        success: false,
+        message: "This account has been deactivated",
       });
 
       return;
@@ -115,6 +132,30 @@ export async function refresh(
       return;
     }
 
+    if (
+      error instanceof Error &&
+      error.message === "This account has been deactivated"
+    ) {
+      res
+        .clearCookie("accessToken", {
+          httpOnly: true,
+          secure: isProduction,
+          sameSite: isProduction ? "none" : "lax",
+        })
+        .clearCookie("refreshToken", {
+          httpOnly: true,
+          secure: isProduction,
+          sameSite: isProduction ? "none" : "lax",
+        })
+        .status(403)
+        .json({
+          success: false,
+          message: "This account has been deactivated",
+        });
+
+      return;
+    }
+
     console.error("Refresh token error:", error);
 
     res.status(500).json({
@@ -153,6 +194,34 @@ export async function logout(
       });
   } catch (error) {
     console.error("Logout error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+}
+
+export async function me(req: Request, res: Response): Promise<void> {
+  try {
+    // req.user is guaranteed by the `authenticate` middleware
+    const user = await getCurrentUser(req.user!.userId);
+
+    res.status(200).json({
+      success: true,
+      user,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "User not found") {
+      res.status(401).json({
+        success: false,
+        message: "User not found or inactive",
+      });
+
+      return;
+    }
+
+    console.error("Me error:", error);
 
     res.status(500).json({
       success: false,
