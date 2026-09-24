@@ -1,15 +1,42 @@
-
 import type { Request, Response } from "express";
 
 import { loginSchema } from "../validators/auth.validator.js";
 import {
   loginAdmin,
   logoutAdmin,
+  logoutAllAdminSessions,
   refreshAdmin,
   getCurrentUser,
 } from "../services/auth.service.js";
 
 const isProduction = process.env.NODE_ENV === "production";
+
+const accessCookieOptions = {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? ("none" as const) : ("lax" as const),
+  maxAge: 15 * 60 * 1000,
+};
+
+const refreshCookieOptions = {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? ("none" as const) : ("lax" as const),
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
+
+function getRequestMetadata(req: Request) {
+  return {
+    userAgent: req.get("user-agent") ?? null,
+    ipAddress: req.ip ?? null,
+  };
+}
+
+function clearAuthCookies(res: Response): Response {
+  return res
+    .clearCookie("accessToken", accessCookieOptions)
+    .clearCookie("refreshToken", refreshCookieOptions);
+}
 
 export async function login(
   req: Request,
@@ -28,21 +55,14 @@ export async function login(
       return;
     }
 
-    const result = await loginAdmin(validationResult.data);
+    const result = await loginAdmin({
+      ...validationResult.data,
+      ...getRequestMetadata(req),
+    });
 
     res
-      .cookie("accessToken", result.accessToken, {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "none" : "lax",
-        maxAge: 15 * 60 * 1000,
-      })
-      .cookie("refreshToken", result.refreshToken, {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "none" : "lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      })
+      .cookie("accessToken", result.accessToken, accessCookieOptions)
+      .cookie("refreshToken", result.refreshToken, refreshCookieOptions)
       .status(200)
       .json({
         success: true,
@@ -99,21 +119,17 @@ export async function refresh(
       return;
     }
 
-    const result = await refreshAdmin(refreshToken);
+    const { userAgent, ipAddress } = getRequestMetadata(req);
+
+    const result = await refreshAdmin(
+      refreshToken,
+      userAgent,
+      ipAddress
+    );
 
     res
-      .cookie("accessToken", result.accessToken, {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "none" : "lax",
-        maxAge: 15 * 60 * 1000,
-      })
-      .cookie("refreshToken", result.refreshToken, {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "none" : "lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      })
+      .cookie("accessToken", result.accessToken, accessCookieOptions)
+      .cookie("refreshToken", result.refreshToken, refreshCookieOptions)
       .status(200)
       .json({
         success: true,
@@ -124,7 +140,7 @@ export async function refresh(
       error instanceof Error &&
       error.message === "Invalid or expired refresh token"
     ) {
-      res.status(401).json({
+      clearAuthCookies(res).status(401).json({
         success: false,
         message: "Invalid or expired refresh token",
       });
@@ -136,22 +152,10 @@ export async function refresh(
       error instanceof Error &&
       error.message === "This account has been deactivated"
     ) {
-      res
-        .clearCookie("accessToken", {
-          httpOnly: true,
-          secure: isProduction,
-          sameSite: isProduction ? "none" : "lax",
-        })
-        .clearCookie("refreshToken", {
-          httpOnly: true,
-          secure: isProduction,
-          sameSite: isProduction ? "none" : "lax",
-        })
-        .status(403)
-        .json({
-          success: false,
-          message: "This account has been deactivated",
-        });
+      clearAuthCookies(res).status(403).json({
+        success: false,
+        message: "This account has been deactivated",
+      });
 
       return;
     }
@@ -176,24 +180,42 @@ export async function logout(
       await logoutAdmin(refreshToken);
     }
 
-    res
-      .clearCookie("accessToken", {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "none" : "lax",
-      })
-      .clearCookie("refreshToken", {
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "none" : "lax",
-      })
-      .status(200)
-      .json({
-        success: true,
-        message: "Logout successful",
-      });
+    clearAuthCookies(res).status(200).json({
+      success: true,
+      message: "Logout successful",
+    });
   } catch (error) {
     console.error("Logout error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+}
+
+export async function logoutAll(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    if (!req.user) {
+      res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+
+      return;
+    }
+
+    await logoutAllAdminSessions(req.user.userId);
+
+    clearAuthCookies(res).status(200).json({
+      success: true,
+      message: "Logged out of all devices",
+    });
+  } catch (error) {
+    console.error("Logout all error:", error);
 
     res.status(500).json({
       success: false,

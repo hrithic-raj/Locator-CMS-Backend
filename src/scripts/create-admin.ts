@@ -43,7 +43,6 @@ async function createAdmin(): Promise<void> {
       email,
       passwordHash,
       role: "admin",
-      refreshToken: null,
       lastLoginAt: null,
     });
 

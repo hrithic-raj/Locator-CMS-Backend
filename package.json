@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "create-admin": "tsx src/scripts/create-admin.ts"
+    "create-admin": "tsx src/scripts/create-admin.ts",
+    "clear-legacy-refresh-tokens": "tsx src/scripts/clear-legacy-refresh-tokens.ts"
   },
   "keywords": [],
   "author": "",
