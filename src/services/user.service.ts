@@ -1,5 +1,6 @@
 import { AdminUser } from "../models/AdminUser.js";
 import { hashPassword } from "../utils/password.js";
+import { logoutAllAdminSessions } from "./auth.service.js";
 import type { CreateUserInput, UpdateUserInput } from "../validators/user.validator.js";
 
 function toPublicUser(user: InstanceType<typeof AdminUser>) {
@@ -96,6 +97,13 @@ export async function updateUser(
 
   await user.save();
 
+  // Deactivating (or demoting away from admin) should take effect
+  // everywhere immediately, not just the next time each session
+  // happens to refresh.
+  if (input.isActive === false) {
+    await logoutAllAdminSessions(user._id.toString());
+  }
+
   return toPublicUser(user);
 }
 
@@ -123,4 +131,5 @@ export async function deleteUser(id: string, requestingUserId: string) {
   }
 
   await user.deleteOne();
+  await logoutAllAdminSessions(user._id.toString());
 }

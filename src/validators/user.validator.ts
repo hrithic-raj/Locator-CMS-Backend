@@ -11,7 +11,7 @@ export const createUserSchema = z.object({
 
   password: z
     .string()
-    .min(4, "Password must be at least 8 characters"),
+    .min(8, "Password must be at least 8 characters"),
 
   role: z.enum(["admin", "editor", "contributor"]).default("contributor"),
 });

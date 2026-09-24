@@ -29,7 +29,9 @@ const adminSessionSchema = new Schema<IAdminSession>(
     expiresAt: {
       type: Date,
       required: true,
-      index: true,
+      // TTL index: MongoDB auto-deletes the doc once expiresAt passes,
+      // so rotated-out/expired sessions don't accumulate forever.
+      index: { expireAfterSeconds: 0 },
     },
 
     revokedAt: {
