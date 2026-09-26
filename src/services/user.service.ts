@@ -1,6 +1,7 @@
 import { AdminUser } from "../models/AdminUser.js";
 import { hashPassword } from "../utils/password.js";
 import { logoutAllAdminSessions } from "./auth.service.js";
+import { logActivity, getActorSnapshot } from "./activityLog.service.js";
 import type { CreateUserInput, UpdateUserInput } from "../validators/user.validator.js";
 
 function toPublicUser(user: InstanceType<typeof AdminUser>) {
@@ -16,7 +17,10 @@ function toPublicUser(user: InstanceType<typeof AdminUser>) {
   };
 }
 
-export async function createUser(input: CreateUserInput) {
+export async function createUser(
+  input: CreateUserInput,
+  requestingUserId: string
+) {
   const existing = await AdminUser.findOne({ email: input.email });
 
   if (existing) {
@@ -31,6 +35,18 @@ export async function createUser(input: CreateUserInput) {
     passwordHash,
     role: input.role,
   });
+
+  const actor = await getActorSnapshot(requestingUserId);
+  if (actor) {
+    await logActivity({
+      actor,
+      action: "user.created",
+      resourceType: "AdminUser",
+      resourceId: user._id.toString(),
+      resourceLabel: user.email,
+      metadata: { role: user.role },
+    });
+  }
 
   return toPublicUser(user);
 }
@@ -104,6 +120,25 @@ export async function updateUser(
     await logoutAllAdminSessions(user._id.toString());
   }
 
+  const actor = await getActorSnapshot(requestingUserId);
+  if (actor) {
+    const action =
+      input.isActive === false
+        ? "user.deactivated"
+        : input.isActive === true
+          ? "user.reactivated"
+          : "user.updated";
+
+    await logActivity({
+      actor,
+      action,
+      resourceType: "AdminUser",
+      resourceId: user._id.toString(),
+      resourceLabel: user.email,
+      metadata: { changes: input },
+    });
+  }
+
   return toPublicUser(user);
 }
 
@@ -132,4 +167,16 @@ export async function deleteUser(id: string, requestingUserId: string) {
 
   await user.deleteOne();
   await logoutAllAdminSessions(user._id.toString());
+
+  const actor = await getActorSnapshot(requestingUserId);
+  if (actor) {
+    await logActivity({
+      actor,
+      action: "user.deleted",
+      resourceType: "AdminUser",
+      resourceId: user._id.toString(),
+      resourceLabel: user.email,
+      metadata: { role: user.role },
+    });
+  }
 }

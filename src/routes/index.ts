@@ -5,6 +5,7 @@ import categoryRoutes from "./category.routes.js";
 import tagRoutes from "./tag.routes.js";
 import mediaRoutes from "./media.routes.js";
 import articleRoutes from "./article.routes.js";
+import activityLogRoutes from "./activityLog.routes.js";
 
 const router = Router();
 
@@ -21,5 +22,6 @@ router.use("/categories", categoryRoutes);
 router.use("/tags", tagRoutes);
 router.use("/media", mediaRoutes);
 router.use("/articles", articleRoutes);
+router.use("/activity-log", activityLogRoutes);
 
 export default router;

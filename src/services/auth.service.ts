@@ -10,6 +10,7 @@ import {
   verifyRefreshToken,
 } from "../utils/jwt.js";
 import { hashToken } from "../utils/token.js";
+import { logActivity } from "./activityLog.service.js";
 
 interface LoginInput {
   email: string;
@@ -50,6 +51,20 @@ function getPublicUser(user: {
     email: user.email,
     role: user.role,
     isActive: user.isActive,
+  };
+}
+
+function toActor(user: {
+  _id: mongoose.Types.ObjectId;
+  name: string;
+  email: string;
+  role: AdminRole;
+}) {
+  return {
+    id: user._id.toString(),
+    name: user.name,
+    email: user.email,
+    role: user.role,
   };
 }
 
@@ -107,10 +122,26 @@ export async function loginAdmin(
   );
 
   if (!passwordMatches) {
+    await logActivity({
+      actor: toActor(user),
+      action: "auth.login_failed",
+      resourceType: "Auth",
+      metadata: { reason: "invalid_password" },
+      ipAddress,
+      userAgent,
+    });
     throw new Error("Invalid email or password");
   }
 
   if (!user.isActive) {
+    await logActivity({
+      actor: toActor(user),
+      action: "auth.login_failed",
+      resourceType: "Auth",
+      metadata: { reason: "account_deactivated" },
+      ipAddress,
+      userAgent,
+    });
     throw new Error("This account has been deactivated");
   }
 
@@ -123,6 +154,14 @@ export async function loginAdmin(
 
   user.lastLoginAt = new Date();
   await user.save();
+
+  await logActivity({
+    actor: toActor(user),
+    action: "auth.login",
+    resourceType: "Auth",
+    ipAddress,
+    userAgent,
+  });
 
   return {
     accessToken,
@@ -220,7 +259,11 @@ export async function getCurrentUser(userId: string): Promise<PublicUser> {
   return getPublicUser(user);
 }
 
-export async function logoutAdmin(refreshToken: string): Promise<void> {
+export async function logoutAdmin(
+  refreshToken: string,
+  userAgent?: string | null,
+  ipAddress?: string | null
+): Promise<void> {
   let payload;
 
   try {
@@ -245,6 +288,17 @@ export async function logoutAdmin(refreshToken: string): Promise<void> {
       $set: { revokedAt: new Date() },
     }
   );
+
+  const user = await AdminUser.findById(payload.userId);
+  if (user) {
+    await logActivity({
+      actor: toActor(user),
+      action: "auth.logout",
+      resourceType: "Auth",
+      ipAddress,
+      userAgent,
+    });
+  }
 }
 
 export async function logoutAllAdminSessions(

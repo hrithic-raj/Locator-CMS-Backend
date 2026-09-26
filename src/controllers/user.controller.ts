@@ -43,7 +43,10 @@ export async function create(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const user = await userService.createUser(validationResult.data);
+    const user = await userService.createUser(
+      validationResult.data,
+      req.user!.userId
+    );
 
     res.status(201).json({ success: true, user });
   } catch (error) {

@@ -177,7 +177,8 @@ export async function logout(
     const refreshToken = req.cookies.refreshToken;
 
     if (refreshToken) {
-      await logoutAdmin(refreshToken);
+      const { userAgent, ipAddress } = getRequestMetadata(req);
+      await logoutAdmin(refreshToken, userAgent, ipAddress);
     }
 
     clearAuthCookies(res).status(200).json({

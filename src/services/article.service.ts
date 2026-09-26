@@ -6,6 +6,7 @@ import { Tag } from "../models/Tag.js";
 import { slugify } from "../utils/slugify.js";
 import { sanitizeArticleContent } from "../utils/sanitizeContent.js";
 import { estimateReadTimeMinutes } from "../utils/readTime.js";
+import { logActivity, getActorSnapshot } from "./activityLog.service.js";
 import type {
   CreateArticleInput,
   UpdateArticleInput,
@@ -102,6 +103,25 @@ const ADMIN_POPULATE = [
   { path: "updatedBy", select: "name email" },
 ];
 
+async function logArticleActivity(
+  user: RequestingUser,
+  action: string,
+  article: { _id: unknown; title: string },
+  metadata?: Record<string, unknown>
+): Promise<void> {
+  const actor = await getActorSnapshot(user.userId);
+  if (!actor) return;
+
+  await logActivity({
+    actor,
+    action,
+    resourceType: "Article",
+    resourceId: String(article._id),
+    resourceLabel: article.title,
+    metadata,
+  });
+}
+
 export async function createArticle(
   input: CreateArticleInput,
   user: RequestingUser
@@ -141,6 +161,10 @@ export async function createArticle(
     publishedAt: null,
     createdBy: user.userId,
     updatedBy: user.userId,
+  });
+
+  await logArticleActivity(user, "article.created", article, {
+    type: article.type,
   });
 
   return toPublic(article);
@@ -230,7 +254,9 @@ export async function deleteArticle(
   user: RequestingUser
 ): Promise<void> {
   const article = await findEditableOrThrow(id, user);
+  const snapshot = { _id: article._id, title: article.title };
   await article.deleteOne();
+  await logArticleActivity(user, "article.deleted", snapshot);
 }
 
 export async function publishArticle(id: string, user: RequestingUser) {
@@ -242,9 +268,14 @@ export async function publishArticle(id: string, user: RequestingUser) {
   if (article.status !== "published") {
     article.publishedAt = article.publishedAt ?? new Date();
   }
+  const previousStatus = article.status;
   article.status = "published";
   article.updatedBy = new Types.ObjectId(user.userId);
   await article.save();
+
+  await logArticleActivity(user, "article.published", article, {
+    from: previousStatus,
+  });
 
   return toPublic(article);
 }
@@ -253,9 +284,14 @@ export async function archiveArticle(id: string, user: RequestingUser) {
   const article = await Article.findById(id);
   if (!article) throw new Error("Article not found");
 
+  const previousStatus = article.status;
   article.status = "archived";
   article.updatedBy = new Types.ObjectId(user.userId);
   await article.save();
+
+  await logArticleActivity(user, "article.archived", article, {
+    from: previousStatus,
+  });
 
   return toPublic(article);
 }
@@ -271,6 +307,12 @@ export async function setFeatured(
   article.isFeatured = isFeatured;
   article.updatedBy = new Types.ObjectId(user.userId);
   await article.save();
+
+  await logArticleActivity(
+    user,
+    isFeatured ? "article.featured" : "article.unfeatured",
+    article
+  );
 
   return toPublic(article);
 }
