@@ -1,8 +1,11 @@
 import multer from "multer";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
 
 const UPLOAD_ROOT = path.join(process.cwd(), "uploads", "images");
+
+mkdirSync(UPLOAD_ROOT, { recursive: true });
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",

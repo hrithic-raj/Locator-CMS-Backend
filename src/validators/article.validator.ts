@@ -1,89 +1,99 @@
 import { z } from "zod";
-
 import { SLUG_PATTERN } from "../utils/slugify.js";
+import { articleFormatEnum } from "./taxonomy.validator.js";
 
 const OBJECT_ID_PATTERN = /^[0-9a-fA-F]{24}$/;
 const objectId = z.string().regex(OBJECT_ID_PATTERN, "Invalid id");
 
 const imageSchema = z.object({
-  url: z.string().trim().min(1, "Image URL is required"),
+  src: z.string().trim().min(1, "Image src is required"),
   alt: z.string().trim().max(200).default(""),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
 });
 
-const seoSchema = z.object({
-  metaTitle: z.string().trim().max(70).optional(),
-  metaDescription: z.string().trim().max(200).optional(),
-  keywords: z.array(z.string().trim()).max(20).optional(),
-});
+const inline = z.string().max(10000);
 
-export const articleTypeEnum = z.enum([
-  "blog",
-  "company_news",
-  "customer_story",
-  "media_coverage",
-]);
+const blogBlockSchema: z.ZodTypeAny = z.lazy(() =>
+  z.discriminatedUnion("type", [
+    z.object({ type: z.literal("heading"), level: z.union([z.literal(2), z.literal(3)]), html: inline }),
+    z.object({ type: z.literal("p"), html: inline }),
+    z.object({ type: z.literal("quote"), html: inline }),
+    z.object({ type: z.literal("ul"), items: z.array(inline).min(1) }),
+    z.object({ type: z.literal("ol"), items: z.array(inline).min(1) }),
+    z.object({ type: z.literal("image"), image: imageSchema }),
+    z.object({
+      type: z.literal("table"),
+      rows: z.array(z.object({ head: z.boolean(), cells: z.array(inline).min(1) })).min(1),
+    }),
+    z.object({ type: z.literal("group"), blocks: z.array(blogBlockSchema) }),
+    z.object({
+      type: z.literal("split"),
+      side: z.enum(["left", "right"]),
+      step: z.number().int().positive().optional(),
+      image: imageSchema,
+      blocks: z.array(blogBlockSchema).min(1),
+    }),
+  ])
+);
 
-// Status/isFeatured/publishedAt are deliberately NOT part of create/update —
-// every article starts as a draft; publishing/archiving/featuring go
-// through their own dedicated, admin/editor-only endpoints.
-export const createArticleSchema = z.object({
-  title: z.string().trim().min(1, "Title is required").max(200),
+export const blogBlockArraySchema = z.array(blogBlockSchema);
 
-  slug: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .regex(SLUG_PATTERN, "Slug must be lowercase, hyphen-separated")
-    .optional(),
-
-  type: articleTypeEnum,
-
-  excerpt: z.string().trim().min(1, "Excerpt is required").max(300),
-
-  content: z.string().trim().min(20, "Content is too short"),
-
+const baseArticleSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  slug: z.string().trim().toLowerCase().regex(SLUG_PATTERN).optional(),
+  format: articleFormatEnum,
+  excerpt: z.string().trim().min(1).max(300),
+  content: blogBlockArraySchema,
   coverImage: imageSchema,
-
-  gallery: z.array(imageSchema).max(20).optional(),
-
-  category: objectId.optional(),
-
+  category: objectId,
   tags: z.array(objectId).max(20).optional(),
-
-  seo: seoSchema.optional(),
-
+  seoTitle: z.string().trim().min(1).max(70),
+  description: z.string().trim().min(1).max(200),
+  keywords: z.array(z.string().trim().min(1)).max(20).optional(),
   sourceOutlet: z.string().trim().max(150).optional(),
-
   sourceUrl: z.string().trim().url("Must be a valid URL").optional(),
+  legacyUrl: z.string().trim().url("Must be a valid URL").optional(),
+  videoUrl: z.string().trim().url("Must be a valid URL").optional(),
+  webinar: z.object({
+    startsAt: z.coerce.date().optional(),
+    endsAt: z.coerce.date().optional(),
+    registrationUrl: z.string().trim().url().optional(),
+  }).optional(),
 });
 
+export const createArticleSchema = baseArticleSchema.superRefine((data, ctx) => {
+  if (data.format === "article" && data.content.length === 0) {
+    ctx.addIssue({ code: "custom", path: ["content"], message: "Article format requires content blocks" });
+  }
+  if (data.format === "video" && !data.videoUrl) {
+    ctx.addIssue({ code: "custom", path: ["videoUrl"], message: "Video format requires videoUrl" });
+  }
+  if (data.format === "webinar" && !data.webinar) {
+    ctx.addIssue({ code: "custom", path: ["webinar"], message: "Webinar format requires webinar details" });
+  }
+});
 export type CreateArticleInput = z.infer<typeof createArticleSchema>;
 
-export const updateArticleSchema = createArticleSchema
-  .partial()
-  .refine((data) => Object.keys(data).length > 0, {
-    message: "At least one field must be provided",
-  });
-
+export const updateArticleSchema = baseArticleSchema.partial().superRefine((data, ctx) => {
+  if (data.format === "video" && data.videoUrl === undefined) return;
+  if (data.format === "video" && !data.videoUrl) {
+    ctx.addIssue({ code: "custom", path: ["videoUrl"], message: "Video format requires videoUrl" });
+  }
+}).refine((data) => Object.keys(data).length > 0, { message: "At least one field must be provided" });
 export type UpdateArticleInput = z.infer<typeof updateArticleSchema>;
 
-export const featureArticleSchema = z.object({
-  isFeatured: z.boolean(),
-});
+export const featureArticleSchema = z.object({ isFeatured: z.boolean() });
 
-export const listArticlesQuerySchema = z.object({
-  type: articleTypeEnum.optional(),
-  category: z.string().trim().optional(), // category slug
-  tag: z.string().trim().optional(), // tag slug
+const listBase = z.object({
+  format: articleFormatEnum.optional(),
+  category: z.string().trim().optional(),
+  tag: z.string().trim().optional(),
   q: z.string().trim().optional(),
-  featured: z
-    .enum(["true", "false"])
-    .optional()
-    .transform((v) => (v === undefined ? undefined : v === "true")),
+  featured: z.enum(["true", "false"]).optional().transform((v) => v === undefined ? undefined : v === "true"),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(50).optional().default(12),
 });
 
-export const listAdminArticlesQuerySchema = listArticlesQuerySchema.extend({
-  status: z.enum(["draft", "published", "archived"]).optional(),
-});
+export const listArticlesQuerySchema = listBase;
+export const listAdminArticlesQuerySchema = listBase.extend({ status: z.enum(["draft", "published", "archived"]).optional() });

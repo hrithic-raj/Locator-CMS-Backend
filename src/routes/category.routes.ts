@@ -1,9 +1,18 @@
-import { Category } from "../models/Category.js";
-import { createTaxonomyService } from "../services/taxonomy.service.js";
-import { createTaxonomyController } from "../controllers/taxonomy.controller.js";
-import { createTaxonomyRouter } from "./taxonomy.routes.js";
+import { Router } from "express";
+import * as controller from "../controllers/category.controller.js";
+import { authenticate, requireRole } from "../middleware/auth.middleware.js";
 
-const categoryService = createTaxonomyService(Category, "category");
-const categoryController = createTaxonomyController(categoryService);
+const router = Router();
 
-export default createTaxonomyRouter(categoryController);
+// Public reads let the frontend populate category filters and forms.
+router.get("/", controller.list);
+router.get("/slug/:slug", controller.getBySlug);
+router.get("/:id", controller.getOne);
+
+// Category management is intentionally ADMIN ONLY.
+router.use(authenticate, requireRole("admin"));
+router.post("/", controller.create);
+router.patch("/:id", controller.update);
+router.delete("/:id", controller.remove);
+
+export default router;

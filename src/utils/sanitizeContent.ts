@@ -1,51 +1,37 @@
 import sanitizeHtml from "sanitize-html";
+import type { BlogBlock } from "../models/Article.js";
 
-/**
- * Whitelist matches exactly what TipTap's standard toolbar produces:
- * headings, paragraphs, marks (bold/italic/underline), lists, tables,
- * blockquotes, links, and images. Anything else (script tags, inline
- * event handlers, style attributes, iframes) is stripped.
- */
-export function sanitizeArticleContent(html: string): string {
-  return sanitizeHtml(html, {
-    allowedTags: [
-      "p",
-      "h2",
-      "h3",
-      "h4",
-      "strong",
-      "em",
-      "u",
-      "s",
-      "ul",
-      "ol",
-      "li",
-      "a",
-      "img",
-      "table",
-      "thead",
-      "tbody",
-      "tr",
-      "th",
-      "td",
-      "blockquote",
-      "br",
-      "hr",
-      "figure",
-      "figcaption",
-    ],
-    allowedAttributes: {
-      a: ["href", "target", "rel"],
-      img: ["src", "alt", "width", "height"],
-      th: ["colspan", "rowspan"],
-      td: ["colspan", "rowspan"],
-    },
-    allowedSchemes: ["http", "https", "mailto"],
-    // Force safe rel on any target=_blank link an editor pastes in.
-    transformTags: {
-      a: sanitizeHtml.simpleTransform("a", {
-        rel: "noopener noreferrer",
-      }),
-    },
+const INLINE_OPTIONS: sanitizeHtml.IOptions = {
+  allowedTags: ["a", "b", "strong", "i", "em", "br", "sup", "sub"],
+  allowedAttributes: { a: ["href"] },
+  allowedSchemes: ["http", "https", "mailto"],
+  transformTags: {
+    a: sanitizeHtml.simpleTransform("a", { rel: "noopener noreferrer" }),
+  },
+};
+
+function sanitizeInline(html: string): string {
+  return sanitizeHtml(html, INLINE_OPTIONS);
+}
+
+export function sanitizeBlogBlocks(blocks: BlogBlock[]): BlogBlock[] {
+  return blocks.map((block): BlogBlock => {
+    switch (block.type) {
+      case "heading":
+      case "p":
+      case "quote":
+        return { ...block, html: sanitizeInline(block.html) };
+      case "ul":
+      case "ol":
+        return { ...block, items: block.items.map(sanitizeInline) };
+      case "image":
+        return { ...block, image: { ...block.image, alt: block.image.alt.trim() } };
+      case "table":
+        return { ...block, rows: block.rows.map((row) => ({ ...row, cells: row.cells.map(sanitizeInline) })) };
+      case "group":
+        return { ...block, blocks: sanitizeBlogBlocks(block.blocks) };
+      case "split":
+        return { ...block, blocks: sanitizeBlogBlocks(block.blocks), image: { ...block.image, alt: block.image.alt.trim() } };
+    }
   });
 }
